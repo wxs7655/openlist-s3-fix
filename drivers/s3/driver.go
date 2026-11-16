@@ -50,6 +50,9 @@ func (d *S3) Init(ctx context.Context) error {
 	if d.Region == "" {
 		d.Region = "openlist"
 	}
+	if d.UploadPartSize != 0 && (d.UploadPartSize < minUploadPartSizeMB || d.UploadPartSize > maxUploadPartSizeMB) {
+		return fmt.Errorf("upload_part_size must be between %d and %d MB, got %d", minUploadPartSizeMB, maxUploadPartSizeMB, d.UploadPartSize)
+	}
 	if d.config.Name == "Doge" {
 		// 多吉云每次临时生成的秘钥有效期为 2h，所以这里设置为 118 分钟重新生成一次
 		d.cron = cron.NewCron(time.Minute * 118)
@@ -198,10 +201,10 @@ func (d *S3) Remove(ctx context.Context, obj model.Obj) error {
 }
 
 func (d *S3) Put(ctx context.Context, dstDir model.Obj, s model.FileStreamer, up driver.UpdateProgress) error {
-	uploader := s3manager.NewUploader(d.Session)
-	if s.GetSize() > s3manager.MaxUploadParts*s3manager.DefaultUploadPartSize {
-		uploader.PartSize = s.GetSize() / (s3manager.MaxUploadParts - 1)
-	}
+	uploader := s3manager.NewUploaderWithClient(d.client, func(u *s3manager.Uploader) {
+		u.PartSize = getUploadPartSize(s.GetSize(), d.UploadPartSize)
+		u.Concurrency = getUploadConcurrency(d.UploadConcurrency)
+	})
 	key := getKey(stdpath.Join(dstDir.GetPath(), s.GetName()), false)
 	contentType := s.GetMimetype()
 	log.Debugln("key:", key)

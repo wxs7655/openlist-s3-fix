@@ -24,6 +24,8 @@ type Addition struct {
 	EnableDirectUpload       bool   `json:"enable_direct_upload" default:"false"`
 	DirectUploadHost         string `json:"direct_upload_host" required:"false"`
 	UserAgent                string `json:"user_agent" required:"false" default:"" help:"Custom User-Agent for S3 requests."`
+	UploadPartSize           int    `json:"upload_part_size" type:"number" default:"0" help:"Multipart upload part size in MB (5-5120). 0 = automatic, grows as needed to stay within 10000 parts."`
+	UploadConcurrency        int    `json:"upload_concurrency" type:"number" default:"5" help:"Number of parts uploaded concurrently (>= 1)."`
 }
 
 func init() {

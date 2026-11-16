@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	awss3 "github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
 func TestCopyFileUsesCopyObjectAtLimit(t *testing.T) {
@@ -183,6 +184,35 @@ func TestGetCopyPartSize(t *testing.T) {
 
 	if _, err := getCopyPartSize(maxCopyPartSize*maxCopyParts + 1); err == nil {
 		t.Fatal("getCopyPartSize returned nil error for an oversized object")
+	}
+}
+
+func TestGetUploadPartSize(t *testing.T) {
+	const gib = int64(1024 * 1024 * 1024)
+	if got := getUploadPartSize(100*mebibyte, 0); got != s3manager.DefaultUploadPartSize {
+		t.Fatalf("automatic part size = %d, want SDK default %d", got, s3manager.DefaultUploadPartSize)
+	}
+	if got := getUploadPartSize(100*mebibyte, 16); got != 16*mebibyte {
+		t.Fatalf("configured part size = %d, want %d", got, 16*mebibyte)
+	}
+	size := 200 * gib
+	got := getUploadPartSize(size, 16)
+	if parts := (size + got - 1) / got; parts > 10000 {
+		t.Fatalf("object of %d bytes needs %d parts with part size %d", size, parts, got)
+	}
+}
+
+func TestNextV1Marker(t *testing.T) {
+	if got := nextV1Marker(&awss3.ListObjectsOutput{NextMarker: aws.String("next")}); got != "next" {
+		t.Fatalf("marker = %q, want next", got)
+	}
+	out := &awss3.ListObjectsOutput{Contents: []*awss3.Object{{Key: aws.String("a")}, {Key: aws.String("b")}}}
+	if got := nextV1Marker(out); got != "b" {
+		t.Fatalf("marker without NextMarker = %q, want last key b", got)
+	}
+	out = &awss3.ListObjectsOutput{CommonPrefixes: []*awss3.CommonPrefix{{Prefix: aws.String("dir/")}}}
+	if got := nextV1Marker(out); got != "dir/" {
+		t.Fatalf("marker from prefix = %q, want dir/", got)
 	}
 }
 
