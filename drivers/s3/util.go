@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -26,34 +25,7 @@ const (
 	defaultCopyPartSize int64 = 100 * 1024 * 1024
 	maxCopyPartSize     int64 = 5 * 1024 * 1024 * 1024
 	maxCopyParts        int64 = 10000
-
-	minUploadPartSizeMB       = 5
-	maxUploadPartSizeMB       = 5 * 1024
-	mebibyte            int64 = 1024 * 1024
 )
-
-// getUploadPartSize returns the multipart upload part size in bytes. A configured
-// size of 0 selects the SDK default; the part size is raised when needed so the
-// object never requires more than the S3 limit of 10000 parts.
-func getUploadPartSize(size int64, configuredMB int) int64 {
-	partSize := s3manager.DefaultUploadPartSize
-	if configuredMB > 0 {
-		partSize = int64(configuredMB) * mebibyte
-	}
-	if size > 0 {
-		partSize = max(partSize, (size-1)/(s3manager.MaxUploadParts-1)+1)
-	}
-	return partSize
-}
-
-// getUploadConcurrency falls back to the SDK default for unset or invalid values,
-// so storages saved before this option existed keep working.
-func getUploadConcurrency(configured int) int {
-	if configured < 1 {
-		return s3manager.DefaultUploadConcurrency
-	}
-	return configured
-}
 
 // do others that not defined in Driver interface
 
@@ -178,28 +150,16 @@ func (d *S3) listV1(dirPath string, args model.ListArgs) ([]model.Obj, error) {
 			}
 			files = append(files, &file)
 		}
-		if !aws.BoolValue(listObjectsResult.IsTruncated) {
+		if listObjectsResult.IsTruncated == nil {
+			return nil, errors.New("IsTruncated nil")
+		}
+		if *listObjectsResult.IsTruncated {
+			marker = *listObjectsResult.NextMarker
+		} else {
 			break
 		}
-		marker = nextV1Marker(listObjectsResult)
 	}
 	return files, nil
-}
-
-// nextV1Marker returns the marker for the next ListObjects page. Some S3-compatible
-// servers omit NextMarker; the AWS docs then define the last returned key or prefix
-// as the marker.
-func nextV1Marker(out *s3.ListObjectsOutput) string {
-	if out.NextMarker != nil {
-		return *out.NextMarker
-	}
-	if n := len(out.Contents); n > 0 && out.Contents[n-1].Key != nil {
-		return *out.Contents[n-1].Key
-	}
-	if n := len(out.CommonPrefixes); n > 0 && out.CommonPrefixes[n-1].Prefix != nil {
-		return *out.CommonPrefixes[n-1].Prefix
-	}
-	return ""
 }
 
 func (d *S3) listV2(dirPath string, args model.ListArgs) ([]model.Obj, error) {
