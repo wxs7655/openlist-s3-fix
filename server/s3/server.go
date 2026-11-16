@@ -14,8 +14,9 @@ import (
 func NewServer(ctx context.Context) (h http.Handler, err error) {
 	var newLogger logger
 	authPairs := authlistResolver()
+	backend := newBackend()
 	faker := gofakes3.New(
-		newBackend(),
+		backend,
 		// gofakes3.WithHostBucket(!opt.pathBucketMode),
 		gofakes3.WithLogger(newLogger),
 		gofakes3.WithRequestID(rand.Uint64()),
@@ -24,5 +25,5 @@ func NewServer(ctx context.Context) (h http.Handler, err error) {
 		gofakes3.WithIntegrityCheck(true), // Check Content-MD5 if supplied
 	)
 
-	return redirectHandler(rangeStatusHandler(faker.Server()), authPairs), nil
+	return redirectHandler(rangeStatusHandler(uploadPartCopyHandler(faker.Server(), backend.(*s3Backend), authPairs)), authPairs), nil
 }
